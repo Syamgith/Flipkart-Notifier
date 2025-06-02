@@ -39,7 +39,8 @@ class FlipkartStockNotifier:
         """
         try:
             logging.info(f"Fetching product page: {product_url}")
-            response = requests.get(product_url, headers=self.headers, timeout=10)
+            # Increased timeout from 10 to 20 seconds
+            response = requests.get(product_url, headers=self.headers, timeout=20)
             response.raise_for_status()  # Raise an exception for bad status codes
             html_content = response.text
 
@@ -86,9 +87,12 @@ class FlipkartStockNotifier:
             logging.warning(f"Stock status for '{product_name}' is ambiguous. Assuming out of stock. Page URL: {product_url}")
             return False, product_name
 
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error fetching product page {product_url}: {str(e)}")
-            return False, "Error fetching product"
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error fetching product page {product_url}: {str(e)}")
+            return False, "Error fetching product (Timeout)"
+        except requests.exceptions.RequestException as e: # Catches other request-related errors like connection errors
+            logging.error(f"Request error fetching product page {product_url}: {str(e)}")
+            return False, "Error fetching product (Request Error)"
         except Exception as e:
             logging.error(f"Error parsing stock status for {product_url}: {str(e)}")
             return False, "Error parsing product data"
