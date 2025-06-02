@@ -14,15 +14,17 @@ logging.basicConfig(
 )
 
 class FlipkartStockNotifier:
-    def __init__(self, telegram_token, chat_id):
+    def __init__(self, telegram_token, chat_id, scraperapi_key=None):
         """
         Initialize the Flipkart Stock Notifier
         :param telegram_token: Telegram bot token
         :param chat_id: Telegram chat ID for notifications
+        :param scraperapi_key: Optional ScraperAPI key
         """
         self.telegram_bot = telegram.Bot(token=telegram_token)
         self.chat_id = chat_id
-        self.headers = {
+        self.scraperapi_key = scraperapi_key
+        self.direct_headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -32,10 +34,9 @@ class FlipkartStockNotifier:
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
             "Referer": "https://www.flipkart.com/",
-            "DNT": "1",
+            "DNT": "1", # Do Not Track
             "Upgrade-Insecure-Requests": "1"
         }
-
 
     def check_stock(self, product_url):
         """
@@ -44,10 +45,18 @@ class FlipkartStockNotifier:
         :return: Tuple of (is_in_stock, product_name)
         """
         try:
-            logging.info(f"Fetching product page: {product_url}")
-            # Increased timeout from 10 to 20 seconds
-            response = requests.get(product_url, headers=self.headers, timeout=20)
-            response.raise_for_status()  # Raise an exception for bad status codes
+            html_content = ""
+            if self.scraperapi_key:
+                scraperapi_url = f'http://api.scraperapi.com?api_key={self.scraperapi_key}&url={product_url.replace("&", "%26")}' # URL encode ampersands for ScraperAPI
+                logging.info(f"Fetching product page via ScraperAPI: {product_url}")
+                # When using ScraperAPI, it's often better to let them handle headers, including User-Agent.
+                # Timeout should be generous for ScraperAPI as it might be retrying on its end.
+                response = requests.get(scraperapi_url, timeout=60) # Increased timeout for ScraperAPI
+            else:
+                logging.info(f"Fetching product page directly: {product_url}")
+                response = requests.get(product_url, headers=self.direct_headers, timeout=20)
+            
+            response.raise_for_status()
             html_content = response.text
 
             product_name = "Unknown Product"
@@ -97,10 +106,10 @@ class FlipkartStockNotifier:
             logging.error(f"Timeout error fetching product page {product_url}: {str(e)}")
             return False, "Error fetching product (Timeout)"
         except requests.exceptions.RequestException as e: # Catches other request-related errors like connection errors
-            logging.error(f"Request error fetching product page {product_url}: {str(e)}")
-            return False, "Error fetching product (Request Error)"
+            logging.error(f"Request error fetching product page {product_url} (Status: {e.response.status_code if e.response else 'N/A'}): {str(e)}")
+            return False, f"Error fetching product (HTTP {e.response.status_code if e.response else 'Error'})"
         except Exception as e:
-            logging.error(f"Error parsing stock status for {product_url}: {str(e)}")
+            logging.error(f"Generic error parsing stock status for {product_url}: {str(e)}")
             return False, "Error parsing product data"
 
     async def send_telegram_notification(self, product_name, product_url):
@@ -127,6 +136,10 @@ class FlipkartStockNotifier:
         :param check_interval: Time between checks in seconds
         """
         logging.info(f"Starting to monitor product: {product_url}")
+        if self.scraperapi_key:
+            logging.info("ScraperAPI key found, will use ScraperAPI.")
+        else:
+            logging.info("No ScraperAPI key found, will use direct scraping.")
         
         while True:
             in_stock, product_name = self.check_stock(product_url)

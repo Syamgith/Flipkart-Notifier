@@ -19,13 +19,14 @@ async def main():
     chat_id = os.getenv('TELEGRAM_CHAT_ID')
     product_url = os.getenv('FLIPKART_PRODUCT_URL')
     check_interval = int(os.getenv('CHECK_INTERVAL', '60'))
+    scraperapi_key = os.getenv('SCRAPERAPI_KEY') # Get ScraperAPI key
 
     if not all([telegram_token, chat_id, product_url]):
-        logging.error("Missing required environment variables. Please check your .env file.")
+        logging.error("Missing required environment variables (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, FLIPKART_PRODUCT_URL). Please check your .env file.")
         return
 
     # Initialize and run the notifier
-    notifier = FlipkartStockNotifier(telegram_token, chat_id)
+    notifier = FlipkartStockNotifier(telegram_token, chat_id, scraperapi_key=scraperapi_key)
     await notifier.monitor_product(product_url, check_interval)
 
 if __name__ == "__main__":
@@ -34,4 +35,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.info("Program stopped by user")
     except Exception as e:
-        logging.error(f"An error occurred: {str(e)}") 
+        logging.error(f"An unexpected error occurred in main: {str(e)}", exc_info=True) 
