@@ -21,7 +21,7 @@ A Python script that monitors Flipkart product stock and sends notifications via
 1. Clone this repository:
 
 ```bash
-git clone https://github.com/yourusername/flipkart-notifier.git
+git clone https://github.com/syamgith/flipkart-notifier.git
 cd flipkart-notifier
 ```
 
@@ -47,11 +47,13 @@ pip install -r requirements.txt
 cp config/.env.example config/.env
 ```
 
-5. Edit the `config/.env` file with your configuration:
-   - Add your Telegram bot token
-   - Add your Telegram chat ID
-   - Add the Flipkart product URL you want to monitor
-   - (Optional) Adjust the check interval
+5. Edit the `.env` file with your configuration:
+   You can configure the following in your `.env` file:
+
+- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
+- `TELEGRAM_CHAT_ID`: Your Telegram chat ID
+- `FLIPKART_PRODUCT_URL`: The URL of the Flipkart product to monitor
+- `CHECK_INTERVAL`: Time between checks in seconds (default: 60)
 
 ## Usage
 
@@ -68,15 +70,6 @@ The script will:
 - Log all activities to the console
 
 To stop the script, press Ctrl+C.
-
-## Configuration
-
-You can configure the following in your `.env` file:
-
-- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
-- `TELEGRAM_CHAT_ID`: Your Telegram chat ID
-- `FLIPKART_PRODUCT_URL`: The URL of the Flipkart product to monitor
-- `CHECK_INTERVAL`: Time between checks in seconds (default: 60)
 
 ## Troubleshooting
 
