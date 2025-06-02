@@ -43,8 +43,10 @@ pip install -r requirements.txt
 
 4. Create your environment file:
 
+   - create .env file in the root
+
 ```bash
-cp config/.env.example config/.env
+touch .env
 ```
 
 5. Edit the `.env` file with your configuration:
