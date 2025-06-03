@@ -60,31 +60,61 @@ class FlipkartStockNotifier:
     def check_stock_with_pincode(self, product_url):
         """
         Check if a product is in stock for a given pincode using Flipkart's internal API.
+        Uses ScraperAPI for the API call if scraperapi_key is available.
         If the API check fails or essential data is missing, it falls back to check_stock().
         :param product_url: URL of the Flipkart product
         :return: Tuple of (is_in_stock, product_name)
         """
-        api_url = "https://1.rome.api.flipkart.com/api/4/page/fetch"
+        flipkart_api_url = "https://1.rome.api.flipkart.com/api/4/page/fetch"
         parsed_url = urlparse(product_url)
         page_uri = parsed_url.path
         if parsed_url.query:
             page_uri += "?" + parsed_url.query
 
-        payload = {
+        flipkart_payload = {
             "pageUri": page_uri,
             "locationContext": {"pincode": self.post_code},
             "isReloadRequest": True
         }
         
-        headers = self.api_headers.copy()
-        headers["referer"] = product_url
-
         # Default product name if API extraction fails but API call itself is okay
         product_name_api = product_url.split('/')[-2].replace('-', ' ').title() if product_url.count('/') > 3 else "Product via API"
 
         try:
-            logging.info(f"Fetching product page via API for pincode {self.post_code}: {product_url}")
-            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+            if self.scraperapi_key:
+                scraperapi_url = 'http://api.scraperapi.com'
+                scraper_params = {
+                    "api_key": self.scraperapi_key,
+                    "url": flipkart_api_url, # Flipkart API URL goes into params for ScraperAPI
+                    "keep_headers": True   # Tell ScraperAPI to forward our headers
+                }
+                
+                # Headers intended for the TARGET (Flipkart API), to be forwarded by ScraperAPI
+                headers_for_target = self.api_headers.copy()
+                headers_for_target["referer"] = product_url
+                # self.api_headers already contains 'Content-Type': 'application/json',
+                # 'X-User-Agent', 'Origin', etc., which are needed by the Flipkart API.
+
+                logging.info(f"Fetching product page via ScraperAPI (keep_headers=True) to Flipkart API for pincode {self.post_code}: {product_url} (target: {flipkart_api_url})")
+                response = requests.post(
+                    scraperapi_url,
+                    params=scraper_params,      # ScraperAPI key, target URL, and keep_headers flag
+                    json=flipkart_payload,      # Flipkart's JSON payload (body for the target)
+                    headers=headers_for_target, # Headers to be forwarded to the Flipkart API
+                    timeout=60                  # Generous timeout for ScraperAPI
+                )
+            else:
+                # Direct call to Flipkart API
+                direct_api_headers = self.api_headers.copy()
+                direct_api_headers["referer"] = product_url
+                logging.info(f"Fetching product page via direct API call for pincode {self.post_code}: {product_url}")
+                response = requests.post(
+                    flipkart_api_url,
+                    headers=direct_api_headers,
+                    json=flipkart_payload,
+                    timeout=30
+                )
+            
             response.raise_for_status()  # Raises HTTPError for 4xx/5xx responses
             data = response.json()       # Raises JSONDecodeError if not JSON
 
