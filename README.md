@@ -22,7 +22,7 @@ A Python script that monitors Flipkart product stock and sends notifications via
 1. Clone this repository:
 
    ```bash
-   git clone https://github.com/yourusername/flipkart-notifier.git # Replace with your repo URL if forked
+   git clone https://github.com/Syamgith/Flipkart-Stock-Notifier.git # Replace with your repo URL if forked
    cd flipkart-notifier
    ```
 
