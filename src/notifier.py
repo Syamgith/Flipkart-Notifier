@@ -60,6 +60,7 @@ class FlipkartStockNotifier:
     def check_stock_with_pincode(self, product_url):
         """
         Check if a product is in stock for a given pincode using Flipkart's internal API.
+        If the API check fails or essential data is missing, it falls back to check_stock().
         :param product_url: URL of the Flipkart product
         :return: Tuple of (is_in_stock, product_name)
         """
@@ -76,55 +77,55 @@ class FlipkartStockNotifier:
         }
         
         headers = self.api_headers.copy()
-        headers["referer"] = product_url # Set specific referer for the product
+        headers["referer"] = product_url
 
-        product_name = "Unknown Product (API)"
+        # Default product name if API extraction fails but API call itself is okay
+        product_name_api = product_url.split('/')[-2].replace('-', ' ').title() if product_url.count('/') > 3 else "Product via API"
+
         try:
             logging.info(f"Fetching product page via API for pincode {self.post_code}: {product_url}")
             response = requests.post(api_url, headers=headers, json=payload, timeout=30)
-            
-            response.raise_for_status()
-            data = response.json()
+            response.raise_for_status()  # Raises HTTPError for 4xx/5xx responses
+            data = response.json()       # Raises JSONDecodeError if not JSON
 
-            # logging.info(f"The dataaaa is {data}")
-            # Extract product name
+            # logging.info(f"The dataaaa is {data}") # User's commented out log
+            # Extract product name from API
             try:
-                product_name = data['RESPONSE']['pageData']['pageContext']['titles']['title']
-            except (KeyError, TypeError) as e:
-                logging.warning(f"Could not extract product name from API response for {product_url}. Error: {e}")
-                # Fallback name from URL if API name extraction fails
-                product_name = product_url.split('/')[-2].replace('-', ' ').title() if product_url.count('/') > 3 else "Product via API"
+                product_name_api = data['RESPONSE']['pageData']['pageContext']['titles']['title']
+            except (KeyError, TypeError) as e_name:
+                logging.warning(f"Could not extract product name from API response for {product_url}. Error: {e_name}. Using default: {product_name_api}")
 
-
-            # Check stock status
+            # Check stock status from API
             try:
                 availability_status = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['availabilityStatus']
                 is_available = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['isAvailable']
-                # is_serviceable = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['isServiceable']
-                is_serviceable = data['RESPONSE']['pageData']['pageContext']['trackingDataV2']['serviceable']
+                # is_serviceable = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['isServiceablee'] # Original
+                is_serviceable = data['RESPONSE']['pageData']['pageContext']['trackingDataV2']['serviceable'] # updated
 
                 if availability_status == "IN_STOCK" and is_available and is_serviceable:
-                    logging.info(f"Product '{product_name}' found IN STOCK for pincode {self.post_code} via API.")
-                    return True, product_name
+                    logging.info(f"Product '{product_name_api}' found IN STOCK for pincode {self.post_code} via API.")
+                    return True, product_name_api
                 else:
-                    logging.info(f"Product '{product_name}' is OUT OF STOCK or not serviceable for pincode {self.post_code} via API. Status: {availability_status}, Available: {is_available}, Serviceable: {is_serviceable}")
-                    return False, product_name
-            except (KeyError, TypeError) as e:
-                logging.error(f"Error parsing stock status from API response for '{product_name}' at {product_url}. Error: {e}. Response snippet: {str(data)[:500]}")
-                return False, product_name
+                    logging.info(f"Product '{product_name_api}' is OUT OF STOCK or not serviceable for pincode {self.post_code} via API. Status: {availability_status}, Available: {is_available}, Serviceable: {is_serviceable}")
+                    return False, product_name_api # API successfully determined out of stock, no fallback needed.
 
-        except requests.exceptions.Timeout as e:
-            logging.error(f"Timeout error fetching product page via API for {product_url}: {str(e)}")
-            return False, f"Error fetching product (Timeout via API for {product_name})"
-        except requests.exceptions.HTTPError as e:
-            logging.error(f"HTTP error fetching product page via API for {product_url} (Status: {e.response.status_code}): {str(e)}. Response: {e.response.text[:200]}")
-            return False, f"Error fetching product (HTTP {e.response.status_code} via API for {product_name})"
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Request error fetching product page via API for {product_url}: {str(e)}")
-            return False, f"Error fetching product (RequestException via API for {product_name})"
-        except Exception as e: # Catch other potential errors like JSONDecodeError
-            logging.error(f"Generic error during API stock check for {product_url}: {str(e)}")
-            return False, f"Error parsing product data (API for {product_name})"
+            except (KeyError, TypeError) as e_stock:
+                # This means API call was successful (200 OK, JSON response), but specific keys for stock status were missing/wrong.
+                logging.warning(f"Error parsing stock status keys from successful API response for '{product_name_api}' at {product_url}. Error: {e_stock}. Response snippet: {str(data)[:200]}. Falling back to HTML scraping.")
+                return self.check_stock(product_url)
+
+        except requests.exceptions.Timeout as e_timeout:
+            logging.warning(f"Timeout error fetching product page via API for {product_url}: {str(e_timeout)}. Falling back to HTML scraping.")
+            return self.check_stock(product_url)
+        except requests.exceptions.HTTPError as e_http:
+            logging.warning(f"HTTP error fetching product page via API for {product_url} (Status: {e_http.response.status_code}): {str(e_http)}. Response: {e_http.response.text[:200]}. Falling back to HTML scraping.")
+            return self.check_stock(product_url)
+        except requests.exceptions.RequestException as e_req: # Catches other request-related errors
+            logging.warning(f"Request error fetching product page via API for {product_url}: {str(e_req)}. Falling back to HTML scraping.")
+            return self.check_stock(product_url)
+        except Exception as e_generic: # Catch other potential errors like JSONDecodeError or unexpected issues
+            logging.warning(f"Generic error or unexpected response during API stock check for {product_url}: {str(e_generic)}. Falling back to HTML scraping.")
+            return self.check_stock(product_url)
 
     def check_stock(self, product_url):
         """
@@ -224,28 +225,34 @@ class FlipkartStockNotifier:
         :param check_interval: Time between checks in seconds
         """
         logging.info(f"Starting to monitor product: {product_url}")
-        
         if self.post_code:
-            logging.info(f"POST_CODE '{self.post_code}' found. Will use API for stock checks.")
+            logging.info(f"POST_CODE '{self.post_code}' found. Will use API for stock checks (with HTML fallback on API error).")
         elif self.scraperapi_key:
-            logging.info("ScraperAPI key found, will use ScraperAPI for HTML scraping.")
+            logging.info(f"No POST_CODE. ScraperAPI key found, will use ScraperAPI for HTML scraping.")
         else:
-            logging.info("No POST_CODE or ScraperAPI key found, will use direct HTML scraping.")
+            logging.info("No POST_CODE and no ScraperAPI key. Will use direct HTML scraping.")
         
         while True:
-            product_name_for_log = product_url # Default for logging if name isn't fetched yet
+            in_stock = False
+            # Initialize with a generic name, it will be updated by the check methods
+            product_name = f"Unknown Product ({product_url})" 
+
             if self.post_code:
+                # check_stock_with_pincode will internally fall back to check_stock if API fails
                 in_stock, product_name = self.check_stock_with_pincode(product_url)
-                product_name_for_log = product_name
             else:
+                # No post_code, so use the original check_stock directly
                 in_stock, product_name = self.check_stock(product_url)
-                product_name_for_log = product_name
             
             if in_stock:
                 await self.send_telegram_notification(product_name, product_url)
-                logging.info(f"Product '{product_name}' is IN STOCK! Notification sent.")
-                # Consider adding a longer sleep here, or exiting if only one notification is needed.
+                logging.info(f"Product '{product_name}' is IN STOCK! Notification sent for {product_url}.")
             else:
-                logging.info(f"Product '{product_name_for_log}' not in stock. Checking again in {check_interval} seconds...")
+                # If product_name contains "Error", it indicates the final method used (API, its fallback HTML, or direct HTML) ultimately failed.
+                if "Error" in product_name:
+                     logging.error(f"Stock check ultimately failed for {product_url}. Last error reported: {product_name}")
+                else:
+                    # Product is confirmed out of stock by the successful method (or its fallback)
+                    logging.info(f"Product '{product_name}' not in stock for {product_url}. Checking again in {check_interval} seconds...")
             
             time.sleep(check_interval) 
