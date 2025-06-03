@@ -42,16 +42,16 @@ A Python script that monitors Flipkart product stock and sends notifications via
    - Start a chat with your newly created bot.
    - Get your chat ID (you can message `@userinfobot` on Telegram, send it a message, and it will reply with your chat ID).
 
-4. Create your environment file:
+4. Create your environment file(.env) in root folder:
    - Copy the example environment file:
      ```bash
-     cp config/.env.example config/.env
+     cp .env.example .env
      ```
-   - **Important**: Edit `config/.env` with your actual details.
+   - **Important**: Edit `.env` with your actual details.
 
-## Configuration (`config/.env`)
+## Configuration (`.env`)
 
-Open `config/.env` and fill in the following details:
+Open the created `.env` and fill in the following details:
 
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token.
 - `TELEGRAM_CHAT_ID`: Your Telegram chat ID.
@@ -64,11 +64,11 @@ Open `config/.env` and fill in the following details:
 Flipkart might block direct requests if they detect scraping activity. To improve reliability and reduce the chances of being blocked, this script supports using [ScraperAPI](https://www.scraperapi.com/). They offer a free tier that is usually sufficient for personal use.
 
 1.  **Sign up** at [ScraperAPI](https://www.scraperapi.com/) to get your free API key.
-2.  Add your ScraperAPI key to your `config/.env` file:
+2.  Add your ScraperAPI key to your `.env` file:
     `env
-    SCRAPERAPI_KEY=your_scraperapi_key_here
-    `
-    If `SCRAPERAPI_KEY` is set, the script will automatically route its requests through ScraperAPI. If it's left blank, the script will attempt to make direct requests to Flipkart (which is more likely to encounter blocks).
+SCRAPERAPI_KEY=your_scraperapi_key_here
+`
+    If `SCRAPERAPI_KEY` is set, the script will automatically route its requests through ScraperAPI. If it's left blank, the script will attempt to make direct requests to Flipkart (which may sometimes encounter blocks).
 
 ## Usage
 
@@ -90,7 +90,7 @@ To stop the script, press `Ctrl+C`.
 ## Troubleshooting
 
 - **No notifications?**
-  - Double-check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `config/.env`.
+  - Double-check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`.
   - Ensure you have started a chat with your bot on Telegram.
   - Check the script's console output for any error messages.
 - **Script errors out or product always shows as "Error fetching product"?**
