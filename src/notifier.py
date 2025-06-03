@@ -6,6 +6,7 @@ import logging
 import os
 from dotenv import load_dotenv
 import re # Added for regex-based title extraction
+from urllib.parse import urlparse # Added for URL parsing
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +25,8 @@ class FlipkartStockNotifier:
         self.telegram_bot = telegram.Bot(token=telegram_token)
         self.chat_id = chat_id
         self.scraperapi_key = scraperapi_key
+        self.post_code = os.getenv('POST_CODE') # Load POST_CODE from .env
+
         self.direct_headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -37,6 +40,91 @@ class FlipkartStockNotifier:
             "DNT": "1", # Do Not Track
             "Upgrade-Insecure-Requests": "1"
         }
+        self.api_headers = {
+            "accept": "*/*",
+            "accept-language": "en-GB,en;q=0.9",
+            "content-type": "application/json",
+            "origin": "https://www.flipkart.com",
+            # Referer will be set dynamically per product
+            "sec-ch-ua": '"Chromium";v="125", "Google Chrome";v="125", "Not.A/Brand";v="24"',
+            "sec-ch-ua-mobile": "?0", # Assuming desktop context
+            "sec-ch-ua-platform": '"macOS"', # Assuming desktop context
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-site",
+            "X-User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 FKUA/website/42/website/Desktop"
+            # User-Agent will be set to X-User-Agent value
+        }
+        self.api_headers["User-Agent"] = self.api_headers["X-User-Agent"]
+
+    def check_stock_with_pincode(self, product_url):
+        """
+        Check if a product is in stock for a given pincode using Flipkart's internal API.
+        :param product_url: URL of the Flipkart product
+        :return: Tuple of (is_in_stock, product_name)
+        """
+        api_url = "https://1.rome.api.flipkart.com/api/4/page/fetch"
+        parsed_url = urlparse(product_url)
+        page_uri = parsed_url.path
+        if parsed_url.query:
+            page_uri += "?" + parsed_url.query
+
+        payload = {
+            "pageUri": page_uri,
+            "locationContext": {"pincode": self.post_code},
+            "isReloadRequest": True
+        }
+        
+        headers = self.api_headers.copy()
+        headers["referer"] = product_url # Set specific referer for the product
+
+        product_name = "Unknown Product (API)"
+        try:
+            logging.info(f"Fetching product page via API for pincode {self.post_code}: {product_url}")
+            response = requests.post(api_url, headers=headers, json=payload, timeout=30)
+            
+            response.raise_for_status()
+            data = response.json()
+
+            # logging.info(f"The dataaaa is {data}")
+            # Extract product name
+            try:
+                product_name = data['RESPONSE']['pageData']['pageContext']['titles']['title']
+            except (KeyError, TypeError) as e:
+                logging.warning(f"Could not extract product name from API response for {product_url}. Error: {e}")
+                # Fallback name from URL if API name extraction fails
+                product_name = product_url.split('/')[-2].replace('-', ' ').title() if product_url.count('/') > 3 else "Product via API"
+
+
+            # Check stock status
+            try:
+                availability_status = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['availabilityStatus']
+                is_available = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['isAvailable']
+                # is_serviceable = data['RESPONSE']['pageData']['pageContext']['fdpEventTracking']['events']['psi']['pls']['isServiceable']
+                is_serviceable = data['RESPONSE']['pageData']['pageContext']['trackingDataV2']['serviceable']
+
+                if availability_status == "IN_STOCK" and is_available and is_serviceable:
+                    logging.info(f"Product '{product_name}' found IN STOCK for pincode {self.post_code} via API.")
+                    return True, product_name
+                else:
+                    logging.info(f"Product '{product_name}' is OUT OF STOCK or not serviceable for pincode {self.post_code} via API. Status: {availability_status}, Available: {is_available}, Serviceable: {is_serviceable}")
+                    return False, product_name
+            except (KeyError, TypeError) as e:
+                logging.error(f"Error parsing stock status from API response for '{product_name}' at {product_url}. Error: {e}. Response snippet: {str(data)[:500]}")
+                return False, product_name
+
+        except requests.exceptions.Timeout as e:
+            logging.error(f"Timeout error fetching product page via API for {product_url}: {str(e)}")
+            return False, f"Error fetching product (Timeout via API for {product_name})"
+        except requests.exceptions.HTTPError as e:
+            logging.error(f"HTTP error fetching product page via API for {product_url} (Status: {e.response.status_code}): {str(e)}. Response: {e.response.text[:200]}")
+            return False, f"Error fetching product (HTTP {e.response.status_code} via API for {product_name})"
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Request error fetching product page via API for {product_url}: {str(e)}")
+            return False, f"Error fetching product (RequestException via API for {product_name})"
+        except Exception as e: # Catch other potential errors like JSONDecodeError
+            logging.error(f"Generic error during API stock check for {product_url}: {str(e)}")
+            return False, f"Error parsing product data (API for {product_name})"
 
     def check_stock(self, product_url):
         """
@@ -136,21 +224,28 @@ class FlipkartStockNotifier:
         :param check_interval: Time between checks in seconds
         """
         logging.info(f"Starting to monitor product: {product_url}")
-        if self.scraperapi_key:
-            logging.info("ScraperAPI key found, will use ScraperAPI.")
+        
+        if self.post_code:
+            logging.info(f"POST_CODE '{self.post_code}' found. Will use API for stock checks.")
+        elif self.scraperapi_key:
+            logging.info("ScraperAPI key found, will use ScraperAPI for HTML scraping.")
         else:
-            logging.info("No ScraperAPI key found, will use direct scraping.")
+            logging.info("No POST_CODE or ScraperAPI key found, will use direct HTML scraping.")
         
         while True:
-            in_stock, product_name = self.check_stock(product_url)
+            product_name_for_log = product_url # Default for logging if name isn't fetched yet
+            if self.post_code:
+                in_stock, product_name = self.check_stock_with_pincode(product_url)
+                product_name_for_log = product_name
+            else:
+                in_stock, product_name = self.check_stock(product_url)
+                product_name_for_log = product_name
             
             if in_stock:
                 await self.send_telegram_notification(product_name, product_url)
-                # Optional: Stop monitoring after first notification or wait longer
-                logging.info(f"Product {product_name} is IN STOCK! Notification sent.")
+                logging.info(f"Product '{product_name}' is IN STOCK! Notification sent.")
                 # Consider adding a longer sleep here, or exiting if only one notification is needed.
-                # For continuous monitoring of re-stock, keep the interval.
             else:
-                logging.info(f"Product '{product_name}' not in stock. Checking again in {check_interval} seconds...")
+                logging.info(f"Product '{product_name_for_log}' not in stock. Checking again in {check_interval} seconds...")
             
             time.sleep(check_interval) 
