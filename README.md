@@ -58,6 +58,8 @@ Open the created `.env` and fill in the following details:
 - `FLIPKART_PRODUCT_URL`: The full URL of the Flipkart product you want to monitor.
 - `CHECK_INTERVAL`: Time in seconds between stock checks (e.g., `60` for 1 minute, `900` for 15 minutes).
   _Be respectful to Flipkart's servers; very frequent checks (e.g., less than a minute) can lead to your IP being temporarily or permanently blocked._
+- `POST_CODE` (Optional): Your postal code (e.g., `560035`).
+  _If provided, the script will first attempt to check stock availability for this specific pincode using a Flipkart API. This can provide more accurate local stock information. If the API check fails or if `POST_CODE` is not provided, the script will fall back to general HTML scraping methods (using ScraperAPI if configured, or direct requests)._
 
 ### Optional: Using ScraperAPI (Recommended for Reliability)
 
@@ -81,8 +83,11 @@ python src/main.py
 The script will:
 
 - Start monitoring the specified Flipkart product.
-- Use ScraperAPI if a key is provided, otherwise make direct requests.
-- Send you a Telegram notification when the product comes in stock.
+- If `POST_CODE` is provided in `.env`, it will first attempt an API-based stock check for that pincode.
+- If the API check is not used (no `POST_CODE`) or if it fails, the script will then:
+  - Use ScraperAPI for HTML scraping if `SCRAPERAPI_KEY` is provided.
+  - Otherwise, make direct HTML scraping requests to Flipkart.
+- Send you a Telegram notification when the product comes in stock based on the successful check method.
 - Log all activities to the console.
 
 To stop the script, press `Ctrl+C`.
